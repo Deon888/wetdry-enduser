@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>洗地机故障自助诊断</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #EEF3F1;
+    --surface: #FFFFFF;
+    --surface-tint: #E4EBE8;
+    --ink: #14232A;
+    --ink-soft: #55686C;
+    --ink-faint: #8B9B9C;
+    --teal: #0C6E78;
+    --teal-deep: #094D54;
+    --teal-tint: #E3F0EF;
+    --alert: #C7402A;
+    --alert-bg: #FBE9E4;
+    --alert-line: #EFC3B8;
+    --resolved: #1E8F63;
+    --resolved-bg: #E4F4EC;
+    --resolved-line: #BFE3CE;
+    --led-off: #C9D1CE;
+    --radius: 14px;
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Noto Sans SC', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.55;
+  }
+
+  .page{
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: clamp(20px, 5vw, 56px) 16px 64px;
+  }
+
+  .shell{
+    width: 100%;
+    max-width: 620px;
+  }
+
+  header{
+    margin-bottom: 28px;
+  }
+
+  .eyebrow{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--teal-deep);
+    text-transform: uppercase;
+    margin: 0 0 14px;
+  }
+
+  .led-strip{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .led{
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--led-off);
+    transition: background 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .led.pending{ background: #D8A73B; box-shadow: 0 0 0 3px rgba(216,167,59,0.18); }
+  .led.confirmed{ background: var(--alert); box-shadow: 0 0 0 3px rgba(199,64,42,0.18); }
+  .led.resolved{ background: var(--resolved); box-shadow: 0 0 0 3px rgba(30,143,99,0.18); }
+
+  .led-label{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    margin-left: 4px;
+  }
+
+  h1{
+    font-family: 'Noto Serif SC', serif;
+    font-weight: 900;
+    font-size: clamp(24px, 5.4vw, 32px);
+    line-height: 1.32;
+    margin: 0 0 12px;
+    color: var(--ink);
+  }
+
+  .subhead{
+    color: var(--ink-soft);
+    font-size: 15px;
+    margin: 0;
+    max-width: 52ch;
+  }
+
+  .checks{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 28px 0;
+  }
+
+  .check-card{
+    background: var(--surface);
+    border: 1.5px solid var(--surface-tint);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.2s ease;
+  }
+
+  .check-card[data-state="pending"]{ border-color: #D8A73B; }
+  .check-card[data-state="confirmed"]{ border-color: var(--alert-line); background: var(--alert-bg); }
+  .check-card[data-state="resolved"]{ border-color: var(--resolved-line); background: var(--resolved-bg); }
+
+  .check-header{
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    color: inherit;
+  }
+
+  .check-header:focus-visible{
+    outline: 2px solid var(--teal);
+    outline-offset: -2px;
+  }
+
+  .check-icon{
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: var(--teal-tint);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--teal-deep);
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .check-card[data-state="confirmed"] .check-icon{ background: #F4D3C9; color: var(--alert); }
+  .check-card[data-state="resolved"] .check-icon{ background: #CDEBDB; color: var(--resolved); }
+
+  .check-icon svg{ width: 19px; height: 19px; }
+
+  .check-title-group{ flex: 1 1 auto; }
+
+  .check-title{
+    display: block;
+    font-weight: 700;
+    font-size: 16px;
+    margin-bottom: 2px;
+  }
+
+  .check-desc{
+    display: block;
+    font-size: 13px;
+    color: var(--ink-faint);
+  }
+
+  .check-tag{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--surface-tint);
+    color: var(--ink-soft);
+    flex: 0 0 auto;
+  }
+
+  .check-card[data-state="confirmed"] .check-tag{ background: var(--alert); color: #fff; }
+  .check-card[data-state="resolved"] .check-tag{ background: var(--resolved); color: #fff; }
+
+  .check-chevron{
+    flex: 0 0 auto;
+    color: var(--ink-faint);
+    transition: transform 0.2s ease;
+    font-size: 12px;
+  }
+
+  .check-card.expanded .check-chevron{ transform: rotate(180deg); }
+
+  .check-body{
+    display: none;
+    padding: 0 18px 18px 70px;
+  }
+
+  .check-card.expanded .check-body{ display: block; }
+
+  .check-question{
+    font-size: 14.5px;
+    color: var(--ink);
+    margin: 0 0 12px;
+  }
+
+  .check-note{
+    font-size: 12.5px;
+    color: #8A6A22;
+    background: #FCF3DC;
+    border: 1px solid #F0DCA0;
+    border-radius: 8px;
+    padding: 9px 11px;
+    margin: 0 0 12px;
+  }
+
+  .check-note:last-child{ margin-bottom: 0; }
+
+  .check-actions{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .btn-answer{
+    text-align: left;
+    padding: 11px 14px;
+    border-radius: 10px;
+    border: 1.5px solid var(--surface-tint);
+    background: var(--surface);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .btn-answer:hover{ border-color: var(--teal); }
+
+  .btn-answer.active[data-answer="confirmed"]{
+    border-color: var(--alert);
+    background: #F4D3C9;
+    font-weight: 500;
+  }
+
+  .btn-answer.active[data-answer="resolved"]{
+    border-color: var(--resolved);
+    background: #CDEBDB;
+    font-weight: 500;
+  }
+
+  .result{
+    border-radius: var(--radius);
+    padding: 22px;
+    background: var(--surface);
+    border: 1.5px solid var(--surface-tint);
+  }
+
+  .result[data-state="alert"]{ background: var(--alert-bg); border-color: var(--alert-line); }
+  .result[data-state="resolved"]{ background: var(--resolved-bg); border-color: var(--resolved-line); }
+
+  .result-status{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+    color: var(--ink-faint);
+  }
+
+  .result[data-state="alert"] .result-status{ color: var(--alert); }
+  .result[data-state="resolved"] .result-status{ color: var(--resolved); }
+
+  .result-title{
+    font-family: 'Noto Serif SC', serif;
+    font-weight: 900;
+    font-size: 19px;
+    margin: 0 0 8px;
+  }
+
+  .result-body{
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  .result-list{
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .result-list li{
+    font-size: 13.5px;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid var(--alert-line);
+    border-radius: 8px;
+    padding: 9px 12px;
+  }
+
+  .result-list li b{ color: var(--alert); }
+
+  .result-actions{
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .btn-whatsapp{
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 700;
+    padding: 11px 18px;
+    border-radius: 10px;
+    border: none;
+    background: #25D366;
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .btn-whatsapp:hover{ background: #1DA851; }
+  .btn-whatsapp svg{ width: 16px; height: 16px; }
+
+  .btn-copy{
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 700;
+    padding: 11px 18px;
+    border-radius: 10px;
+    border: 1.5px solid var(--alert-line);
+    background: transparent;
+    color: var(--alert);
+    cursor: pointer;
+  }
+
+  .btn-copy:hover{ background: rgba(199,64,42,0.06); }
+
+  footer{
+    margin-top: 22px;
+    font-size: 12px;
+    color: var(--ink-faint);
+    text-align: center;
+  }
+
+  @media (max-width: 420px){
+    .check-body{ padding-left: 18px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <div class="shell">
+    <header>
+      <p class="eyebrow">自助故障诊断 · SELF-CHECK</p>
+      <div class="led-strip">
+        <span class="led" data-led="0"></span>
+        <span class="led" data-led="1"></span>
+        <span class="led" data-led="2"></span>
+        <span class="led-label" id="ledLabel">等待诊断</span>
+      </div>
+      <h1>3步自查，看看你的机器是否需要进行售后</h1>
+      <p class="subhead">针对无法开机、漏水、异响这3种常见情况，请先按提示完成简单排查，系统会自动判断是否需要联系客服处理。</p>
+    </header>
+
+    <div class="checks">
+
+      <div class="check-card" data-key="power" data-state="inactive">
+        <button class="check-header" type="button" aria-expanded="false">
+          <span class="check-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v7"/><path d="M6.5 6.5a8 8 0 1 0 11 0"/></svg>
+          </span>
+          <span class="check-title-group">
+            <span class="check-title">无法开机</span>
+            <span class="check-desc">按开关没有反应</span>
+          </span>
+          <span class="check-tag">未选择</span>
+          <span class="check-chevron">⌄</span>
+        </button>
+        <div class="check-body">
+          <p class="check-question">您是否已经更换过其他插座供电？</p>
+          <div class="check-actions">
+            <button class="btn-answer" data-answer="confirmed" type="button">换了插座，还是无法开机</button>
+            <button class="btn-answer" data-answer="resolved" type="button">换插座后可以开机了</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="check-card" data-key="leak" data-state="inactive" data-force-confirm="true">
+        <button class="check-header" type="button" aria-expanded="false">
+          <span class="check-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>
+          </span>
+          <span class="check-title-group">
+            <span class="check-title">漏水</span>
+            <span class="check-desc">机身或水箱有水渗出</span>
+          </span>
+          <span class="check-tag">未选择</span>
+          <span class="check-chevron">⌄</span>
+        </button>
+        <div class="check-body">
+          <p class="check-note">只要出现漏水情况，无论是水箱本身漏水还是机身漏水，都建议直接联系客户处理，无需自行拆机排查。</p>
+        </div>
+      </div>
+
+      <div class="check-card" data-key="noise" data-state="inactive">
+        <button class="check-header" type="button" aria-expanded="false">
+          <span class="check-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h2v3H3z"/><path d="M7 9h2v9H7z"/><path d="M11 5h2v17h-2z"/><path d="M15 9h2v9h-2z"/><path d="M19 12h2v3h-2z"/></svg>
+          </span>
+          <span class="check-title-group">
+            <span class="check-title">异响</span>
+            <span class="check-desc">运行时有不正常的声音</span>
+          </span>
+          <span class="check-tag">未选择</span>
+          <span class="check-chevron">⌄</span>
+        </button>
+        <div class="check-body">
+          <p class="check-question">您是否已拆下滚刷和滤网清洁后，再重新测试过？</p>
+          <div class="check-actions">
+            <button class="btn-answer" data-answer="confirmed" type="button">清洁滚刷和滤网后，异响仍然存在</button>
+            <button class="btn-answer" data-answer="resolved" type="button">清洁后，异响消失了</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <section class="result" id="result" data-state="neutral">
+      <p class="result-status" id="resultStatus">STATUS · 等待诊断</p>
+      <h2 class="result-title" id="resultTitle">请选择上方遇到的情况开始</h2>
+      <p class="result-body" id="resultBody">点击符合您情况的卡片，按照提示完成简单排查，结果会自动显示在这里。</p>
+      <ul class="result-list" id="resultList" style="display:none;"></ul>
+      <div class="result-actions" id="resultActions" style="display:none;">
+        <button class="btn-whatsapp" id="waBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.5L3 21l2.1-5.5A8.5 8.5 0 1 1 21 11.5z"/><path d="M8.5 10.5c.3 2.5 2.5 4.7 5 5"/></svg>
+          通过 WhatsApp 联系客服
+        </button>
+        <button class="btn-copy" id="copyBtn" type="button">复制诊断结果</button>
+      </div>
+    </section>
+
+    <footer>诊断结果仅供参考，最终以客服人工判断为准。</footer>
+  </div>
+</div>
+
+<script>
+  const cards = Array.from(document.querySelectorAll('.check-card'));
+  const leds = Array.from(document.querySelectorAll('.led'));
+  const ledLabel = document.getElementById('ledLabel');
+  const result = document.getElementById('result');
+  const resultStatus = document.getElementById('resultStatus');
+  const resultTitle = document.getElementById('resultTitle');
+  const resultBody = document.getElementById('resultBody');
+  const resultList = document.getElementById('resultList');
+  const resultActions = document.getElementById('resultActions');
+  const copyBtn = document.getElementById('copyBtn');
+  const waBtn = document.getElementById('waBtn');
+
+  // TODO：请替换成客服的 WhatsApp 号码（国家代码开头，不加 + 号，例如马来西亚号码写成 60123456789）
+  const WHATSAPP_NUMBER = '60123456789';
+
+  function setState(card, state){
+    card.dataset.state = state;
+    const header = card.querySelector('.check-header');
+    const tag = card.querySelector('.check-tag');
+    const expanded = state !== 'inactive';
+    card.classList.toggle('expanded', expanded);
+    header.setAttribute('aria-expanded', String(expanded));
+
+    const tagText = { inactive: '未选择', pending: '待确认', confirmed: '仍有问题', resolved: '已解决' };
+    tag.textContent = tagText[state];
+  }
+
+  cards.forEach(function(card){
+    const header = card.querySelector('.check-header');
+    header.addEventListener('click', function(){
+      const state = card.dataset.state;
+      if (card.dataset.forceConfirm === 'true') {
+        if (state === 'inactive') {
+          setState(card, 'confirmed');
+          card.dataset.reasonText = '机器出现漏水情况';
+        } else {
+          setState(card, 'inactive');
+          delete card.dataset.reasonText;
+        }
+        updateResult();
+        return;
+      }
+      if (state === 'inactive') {
+        setState(card, 'pending');
+      } else {
+        setState(card, 'inactive');
+        card.querySelectorAll('.btn-answer').forEach(function(b){ b.classList.remove('active'); });
+        delete card.dataset.reasonText;
+      }
+      updateResult();
+    });
+
+    card.querySelectorAll('.btn-answer').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        setState(card, btn.dataset.answer);
+        card.dataset.reasonText = btn.textContent.trim();
+        card.querySelectorAll('.btn-answer').forEach(function(b){
+          b.classList.toggle('active', b === btn);
+        });
+        updateResult();
+      });
+    });
+  });
+
+  function updateResult(){
+    const states = cards.map(function(c){ return c.dataset.state; });
+    const confirmed = cards.filter(function(c){ return c.dataset.state === 'confirmed'; });
+    const selectedCount = states.filter(function(s){ return s !== 'inactive'; }).length;
+    const pendingCount = states.filter(function(s){ return s === 'pending'; }).length;
+
+    leds.forEach(function(led, i){
+      led.className = 'led';
+      if (states[i] !== 'inactive') led.classList.add(states[i]);
+    });
+
+    if (confirmed.length > 0) {
+      ledLabel.textContent = '建议联系客户';
+      result.dataset.state = 'alert';
+      resultStatus.textContent = 'STATUS · 建议联系客户';
+      resultTitle.textContent = '建议尽快联系客户';
+      resultBody.textContent = '以下情况在您自行排查后仍然存在，建议提供以下信息联系客服处理：';
+      resultList.style.display = 'flex';
+      resultList.innerHTML = confirmed.map(function(c){
+        const title = c.querySelector('.check-title').textContent;
+        const reason = c.dataset.reasonText || '';
+        return '<li><b>' + title + '</b> — ' + reason + '</li>';
+      }).join('');
+      resultActions.style.display = 'flex';
+    } else if (selectedCount === 0) {
+      ledLabel.textContent = '等待诊断';
+      result.dataset.state = 'neutral';
+      resultStatus.textContent = 'STATUS · 等待诊断';
+      resultTitle.textContent = '请选择上方遇到的情况开始';
+      resultBody.textContent = '点击符合您情况的卡片，按照提示完成简单排查，结果会自动显示在这里。';
+      resultList.style.display = 'none';
+      resultActions.style.display = 'none';
+    } else if (pendingCount > 0) {
+      ledLabel.textContent = '诊断进行中';
+      result.dataset.state = 'neutral';
+      resultStatus.textContent = 'STATUS · 诊断进行中';
+      resultTitle.textContent = '请完成上方排查步骤';
+      resultBody.textContent = '还有情况尚未确认排查结果，请点击对应选项完成判断。';
+      resultList.style.display = 'none';
+      resultActions.style.display = 'none';
+    } else {
+      ledLabel.textContent = '暂无需联系客户';
+      result.dataset.state = 'resolved';
+      resultStatus.textContent = 'STATUS · 暂无需联系客户';
+      resultTitle.textContent = '问题已初步排除';
+      resultBody.textContent = '您排查的情况目前都已解决，暂时无需联系客户。如果之后情况再次出现，欢迎随时回来重新诊断。';
+      resultList.style.display = 'none';
+      resultActions.style.display = 'none';
+    }
+  }
+
+  function buildSummaryText(){
+    const confirmed = cards.filter(function(c){ return c.dataset.state === 'confirmed'; });
+    const lines = ['故障自诊断结果：'];
+    confirmed.forEach(function(c){
+      const title = c.querySelector('.check-title').textContent;
+      const reason = c.dataset.reasonText || '';
+      lines.push('• ' + title + '：' + reason);
+    });
+    lines.push('建议联系客户跟进处理。');
+    return lines.join('\n');
+  }
+
+  waBtn.addEventListener('click', function(){
+    const text = buildSummaryText();
+    const url = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(text);
+    window.open(url, '_blank');
+  });
+
+  copyBtn.addEventListener('click', function(){
+    const text = buildSummaryText();
+
+    function fallbackCopy(){
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch(err) {}
+      document.body.removeChild(ta);
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+
+    const original = copyBtn.textContent;
+    copyBtn.textContent = '已复制 ✓';
+    setTimeout(function(){ copyBtn.textContent = original; }, 1800);
+  });
+
+  updateResult();
+</script>
+
+</body>
+</html>
